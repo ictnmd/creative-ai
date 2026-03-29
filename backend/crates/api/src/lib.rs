@@ -4,12 +4,15 @@
 //! routes them to the appropriate handlers, and returns responses.
 
 pub mod account;
+pub mod admin;
 pub mod auth;
 pub mod billing;
 pub mod extractors;
 pub mod generations;
 pub mod presets;
 pub mod reference;
+pub mod sharing;
+pub mod social;
 mod users;
 pub mod ws_generations;
 
@@ -55,6 +58,9 @@ pub fn create_router(state: ApiState) -> Router {
     let billing = billing::create_billing_router(state.clone());
     let presets = presets::create_presets_router(state.clone());
     let reference = reference::create_reference_router(state.clone());
+    let social = social::create_social_router(state.clone());
+    let admin = admin::create_admin_router(state.clone());
+    let sharing = sharing::create_sharing_router(state.clone());
     let ws_generations = ws_generations::ws_router(state);
 
     Router::new()
@@ -67,6 +73,9 @@ pub fn create_router(state: ApiState) -> Router {
         .merge(billing)
         .merge(presets)
         .merge(reference)
+        .merge(social)
+        .merge(admin)
+        .merge(sharing)
         .merge(ws_generations)
 }
 
