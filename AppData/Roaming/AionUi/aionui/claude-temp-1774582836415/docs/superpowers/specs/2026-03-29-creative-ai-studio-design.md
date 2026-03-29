@@ -2,7 +2,7 @@
 
 > **Phase 1:** Core Image Generation
 > **Date:** 2026-03-29
-> **Status:** Draft
+> **Status:** Approved (revised after review)
 
 ---
 
@@ -98,16 +98,18 @@ A multi-user creative AI platform for generating images via multiple providers (
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | Primary key |
+| username | VARCHAR(50) | Unique, URL-safe, used in `/public/:username` |
 | email | VARCHAR(255) | Unique |
 | password_hash | VARCHAR(255) | bcrypt, nullable for OAuth-only |
 | name | VARCHAR(100) | Display name |
 | avatar_url | TEXT | Nullable |
 | auth_provider | ENUM | google, github, email |
 | subscription_tier | ENUM | free, basic, pro, unlimited |
-| credit_balance | INTEGER | Default 0 |
 | role | ENUM | user, admin |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
+
+> **Note:** `credit_balance` is NOT stored on User. Balance is computed from `SUM(amount)` in `CreditTransaction` table (cached in DragonflyDB for performance). If stored as a convenience field, it MUST be updated within the same DB transaction as every credit transaction to avoid drift.
 
 ### Generation
 | Field | Type | Notes |
@@ -154,11 +156,12 @@ A multi-user creative AI platform for generating images via multiple providers (
 | stripe_subscription_id | VARCHAR(255) | Nullable |
 | stripe_customer_id | VARCHAR(255) | |
 | quota_monthly | INTEGER | Generations per month |
-| quota_used | INTEGER | Current month usage |
 | starts_at | TIMESTAMP | |
 | expires_at | TIMESTAMP | |
 | status | ENUM | active, cancelled, past_due |
 | created_at | TIMESTAMP | |
+
+> **Note:** `quota_used` is NOT stored. It is computed at query time as `COUNT(*) FROM generation WHERE user_id = ? AND created_at >= starts_at`. This avoids the need for a reset mechanism and guarantees accuracy. Cache computed quota in DragonflyDB with TTL = 5 minutes.
 
 ### CreditTransaction
 | Field | Type | Notes |
@@ -175,11 +178,17 @@ A multi-user creative AI platform for generating images via multiple providers (
 | Field | Type | Notes |
 |---|---|---|
 | id | UUID | Primary key |
-| generation_id | UUID | FK → Generation |
+| generation_id | UUID | FK → Generation, UNIQUE |
 | share_token | VARCHAR(64) | Unique, URL-safe |
-| is_public | BOOLEAN | |
-| view_count | INTEGER | Default 0 |
+| is_public | BOOLEAN | Appears in public browse/search |
 | created_at | TIMESTAMP | |
+
+> **Note:** `visibility` on `Generation` and `is_public` on `SharedGeneration` are linked:
+> - `visibility = private` → no `SharedGeneration` record exists
+> - `visibility = shared` → `SharedGeneration` record exists, `is_public = false`
+> - `visibility = public` → `SharedGeneration` record exists, `is_public = true`
+>
+> `view_count` is only on `Generation` (not duplicated).
 
 ### UserProfile (public)
 | Field | Type | Notes |
@@ -187,9 +196,17 @@ A multi-user creative AI platform for generating images via multiple providers (
 | user_id | UUID | PK, FK → User |
 | bio | TEXT | |
 | showcase_ids | UUID[] | Featured generation IDs |
-| follower_count | INTEGER | Default 0 |
-| following_count | INTEGER | Default 0 |
 | is_public_profile | BOOLEAN | Default true |
+
+> **Note:** `follower_count` and `following_count` are derived from `Follow` table, not stored here.
+
+### Follow
+| Field | Type | Notes |
+|---|---|---|
+| follower_id | UUID | FK → User (the one who follows) |
+| following_id | UUID | FK → User (the one being followed) |
+| created_at | TIMESTAMP | |
+| | | PRIMARY KEY (follower_id, following_id) |
 
 ### UserAPIKey (user bring-your-own)
 | Field | Type | Notes |
@@ -301,20 +318,36 @@ A multi-user creative AI platform for generating images via multiple providers (
 |---|---|---|
 | POST | /auth/register | Email/password registration |
 | POST | /auth/login | Login, returns JWT |
-| POST | /auth/oauth/:provider | Initiate OAuth (Google/GitHub) |
-| GET | /auth/oauth/:provider/callback | OAuth callback |
-| POST | /auth/refresh | Refresh JWT |
-| POST | /auth/logout | Invalidate session |
+| POST | /auth/oauth/:provider | Initiate OAuth (Google/GitHub). Requires PKCE + state param for CSRF protection. State param stored in DragonflyDB with 10-min TTL. |
+| GET | /auth/oauth/:provider/callback | OAuth callback, validates state param, exchanges code for token |
+| POST | /auth/refresh | Refresh JWT (refresh token rotation) |
+| POST | /auth/logout | Invalidate session + refresh token |
 
 ### Generations
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | /generations | Create new generation |
-| GET | /generations | List user's generations (paginated) |
+| POST | /generations | Create new generation. Body: `{ prompt, enhanced_prompt?, provider?, model?, style_preset_id?, reference_images?, sketch_data?, aspect_ratio?, num_images?, visibility? }` |
+| GET | /generations | List user's generations (paginated). Query params: `?provider=`, `?status=`, `?from=`, `?to=`, `?page=`, `?limit=` |
 | GET | /generations/:id | Get generation details |
 | DELETE | /generations/:id | Delete generation |
 | GET | /generations/:id/status | Poll generation status |
 | WS | /generations/stream | WebSocket for real-time status |
+
+#### WebSocket Protocol — `/generations/stream`
+
+- **Connection:** `wss://api.example.com/ws/generations?token=<jwt>`
+- **Auth:** JWT passed as query param, validated on connection
+- **Client → Server (subscribe):**
+  ```json
+  { "type": "subscribe", "generation_id": "uuid-here" }
+  ```
+- **Server → Client (status update):**
+  ```json
+  { "type": "status", "generation_id": "uuid-here", "status": "processing", "progress": 50 }
+  { "type": "status", "generation_id": "uuid-here", "status": "completed", "output_urls": ["..."] }
+  { "type": "error", "generation_id": "uuid-here", "message": "Provider API error" }
+  ```
+- **Reconnection:** Client auto-reconnects with exponential backoff (max 5 retries). Falls back to polling `/generations/:id/status` if WebSocket unavailable.
 
 ### Presets
 | Method | Endpoint | Description |
@@ -351,6 +384,14 @@ A multi-user creative AI platform for generating images via multiple providers (
 | DELETE | /generations/:id/share | Remove share |
 | GET | /shared/:token | View shared generation (public) |
 | GET | /public/:username | Public profile (public) |
+
+### Social (Follow)
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | /users/:username/follow | Follow a user |
+| DELETE | /users/:username/follow | Unfollow a user |
+| GET | /users/:username/followers | List followers (paginated) |
+| GET | /users/:username/following | List following (paginated) |
 
 ### Admin
 | Method | Endpoint | Description |
@@ -445,6 +486,14 @@ A multi-user creative AI platform for generating images via multiple providers (
 | EmptyState | — | Empty gallery state |
 | UserAvatar | — | Avatar with fallback initials |
 | Sidebar | collapsed, expanded | Main navigation sidebar |
+| FilterBar | — | Gallery filters: provider, date, status |
+| Pagination | — | Page navigation for gallery and history |
+| SubscriptionManagementModal | — | Upgrade/downgrade subscription tiers |
+| DeleteConfirmationModal | — | Confirm before destructive actions |
+| AdminUserTable | — | User list with search, suspend, quota edit |
+| AdminContentModerationTable | — | Browse and moderate flagged content |
+| AnalyticsDashboard | — | Charts and stats for admin analytics |
+| AdminAPIKeyTable | — | System API key management |
 
 ---
 
@@ -454,6 +503,10 @@ A multi-user creative AI platform for generating images via multiple providers (
 |---|---|
 | API key quota exhausted | Toast error + redirect to settings |
 | Generation failed | Error card in results + retry option |
+| **Provider API failure** (timeout, error, rate limit) | Retry with exponential backoff (max 3 attempts). If all fail, mark generation as `failed` with error message, notify user. Do NOT silently fall back to another provider without user consent. |
+| **Stripe webhook delivery failure** | Stripe retries webhooks automatically. Log failed deliveries; process on retry. |
+| **DragonflyDB connection failure** | Return 503 Service Unavailable; sessions become unavailable, fall back to PostgreSQL for session storage |
+| **PostgreSQL connection failure** | Return 503; generation queue pauses; admin alert triggered |
 | Image upload too large | Client-side validation (max 10MB) |
 | Rate limit exceeded | Toast warning + countdown timer |
 | Credits exhausted | Disable generate, prompt purchase |
@@ -461,18 +514,27 @@ A multi-user creative AI platform for generating images via multiple providers (
 | WebSocket disconnect | Auto-reconnect + polling fallback |
 | Session expired | Auto-redirect to login, preserve form |
 | S3 upload failed | Retry 3x, then error + notification |
+| Duplicate generation request | Idempotency key (UUID) on POST; deduplicate on backend |
+| OAuth provider unavailable | Show error, suggest email/password login |
 
 ---
 
 ## 10. Security Considerations
 
-- API keys encrypted at rest (AES-256)
-- JWT with short expiry + refresh token rotation
-- Rate limiting per user and per IP
-- Input sanitization on all user prompts
-- Content moderation on shared/public content
-- Admin routes protected by role middleware
-- S3 presigned URLs with expiry for downloads
+- **API keys encrypted at rest (AES-256-GCM)** — Using AES-GCM provides both confidentiality and authenticity (authenticated encryption). Each key has a unique IV/nonce.
+- **JWT with short expiry + refresh token rotation** — Access token: 15 min expiry. Refresh token: 7 day expiry, single-use (rotation on each refresh).
+- **OAuth CSRF protection** — Authorization code flow with PKCE. State parameter stored in DragonflyDB with 10-minute TTL, validated on callback.
+- **SvelteKit SPA: JWT stored in httpOnly cookie** — Not localStorage. Cookie has `SameSite=Strict` + `Secure` flag. CSRF protection via SameSite cookie policy (no separate CSRF token needed when using SameSite=Strict).
+- **Rate limiting per user and per IP** — Implemented via DragonflyDB. Limits: 60 req/min per IP for auth endpoints, 100 req/min per user for generation endpoints.
+- **Input sanitization** — All user prompts sanitized server-side. Reference image URLs validated and fetched server-side (not passed through to provider directly).
+- **Content moderation** — On shared/public content before publication. Admin moderation queue for flagged content.
+- **Admin routes** — Protected by role middleware. Separate admin JWT claims.
+- **S3 presigned URLs** — With short expiry (15 minutes) for downloads.
+- **Stripe webhook verification** — Verify `Stripe-Signature` header using webhook secret. Reject any request with invalid or missing signature.
+- **BYOK fallback logic** — If user's own API key is invalid/rejected, do NOT silently fall back to system keys. Return clear error to user.
+- **CSP headers** — Content-Security-Policy configured to restrict inline scripts and external domains.
+- **CORS** — Backend configured with explicit allowed origins list (env var). No wildcard `*`.
+- **Sketch data** — Max size limit enforced (1MB JSON payload).
 
 ---
 
