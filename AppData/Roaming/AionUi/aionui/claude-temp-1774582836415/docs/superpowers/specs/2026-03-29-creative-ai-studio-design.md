@@ -575,6 +575,218 @@ The generation worker is a **separate Rust process** (same binary, `--worker` fl
 | Phase 3 | AI Chat (Claude API, GPT) + Canvas editor |
 | Phase 4 | Audio (TTS, music, voice cloning) |
 | Phase 5 | Team collaboration, advanced subscriptions, analytics |
+| **Phase 6** | **Creative Workflows (Pipeline Builder + Project/Team + Preset Chains)** |
+
+## 11.1 Phase 6 — Creative Workflows
+
+Phase 6 adds three interconnected workflow systems to transform the platform from a generation tool into a **creative operations platform**.
+
+---
+
+### A. Pipeline Builder (Node-based Automation)
+
+A visual node editor for chaining multiple AI operations into automated pipelines.
+
+**Core concept:** Each pipeline is a directed graph of nodes. Data flows from node to node. Users drag nodes onto a canvas, connect them, and execute the pipeline end-to-end.
+
+**Node types:**
+
+| Category | Node Types |
+|---|---|
+| Input | Prompt node, Image upload node, Reference image node, Sketch node |
+| Generation | Image generation node (configurable provider/model), Video generation node, Audio generation node |
+| Processing | Upscale node, Inpaint node, Remove background node, Enhance prompt node |
+| Logic | Condition node (if/else based on output quality), Loop node (iterate over images), Merge node (combine outputs) |
+| Output | Download node, Share node, Save to project node, Export node |
+| Integration | API webhook node (trigger external services), Schedule node (cron-based triggers) |
+
+**Pipeline features:**
+- **Sub-pipelines:** Save a group of nodes as a reusable sub-pipeline (like a function)
+- **Variables:** Define variables at pipeline level, reference them in any node
+- **Loop/iteration:** Process multiple inputs through the same pipeline (batch processing)
+- **Conditional branches:** Route execution based on output (e.g., if image quality < threshold, retry with different params)
+- **Version history:** Every pipeline save creates a version; rollback supported
+- **Execution modes:** Run synchronously (wait for result) or asynchronously (queue and notify)
+- **Cost estimation:** Show estimated credit/quota cost before execution
+- **Execution log:** Per-node status, timing, cost, and output for debugging
+
+**Pipeline data model:**
+```
+Pipeline
+├── id, user_id, name, description
+├── graph_json (serialized node graph)
+├── variables_json
+├── is_public, is_builtin
+├── last_run_at, run_count
+├── created_at, updated_at
+
+PipelineRun
+├── id, pipeline_id, user_id
+├── status (queued, running, completed, failed)
+├── started_at, completed_at
+├── total_cost_credits, total_cost_quota
+├── trigger_type (manual, webhook, schedule)
+├── execution_log_json (per-node results)
+├── parent_pipeline_run_id (for loop iterations)
+├── created_at
+```
+
+---
+
+### B. Project & Team Workflow
+
+Organize work into projects with team members, roles, permissions, and approval flows.
+
+**Project concept:** A project is a container for related generations, pipelines, and assets. Teams collaborate within projects.
+
+**Project features:**
+- **Project spaces:** Create projects (e.g., "Marketing Campaign Q2", "Product Photoshoot")
+- **Team roles:** Owner, Admin, Editor, Viewer. Role-based permissions on project resources
+- **Asset library:** Shared reference images, uploaded assets, style guides per project
+- **Task/approval flow:** Assign generation tasks to team members; reviewer approves/rejects outputs before publishing
+- **Project-wide style presets:** Team admins can publish presets shared across all project members
+- **Project analytics:** Per-project generation count, cost, and usage stats
+- **Invitation system:** Invite members via email, generate invite links with expiry
+
+**Project data model:**
+```
+Team
+├── id, name, owner_id
+├── plan_tier (team_small, team_large, enterprise)
+├── settings_json (permissions defaults)
+├── created_at
+
+TeamMember
+├── team_id, user_id
+├── role (owner, admin, editor, viewer)
+├── invited_by, joined_at
+
+Project
+├── id, team_id, name, description
+├── is_archived, settings_json
+├── created_at, updated_at
+
+ProjectInvitation
+├── id, project_id, email
+├── token, role, expires_at
+├── accepted_at
+```
+
+---
+
+### C. Preset Chains (Reusable Generation Templates)
+
+Extend the existing preset system into **chains** — parameterized templates that combine prompt structure, style, model, reference images, and post-processing steps.
+
+**Chain features:**
+- **Chain steps:** A chain contains ordered steps. Each step = (prompt segment + style + model + reference)
+- **Parameters:** Mark any part of the prompt as a parameter `{subject}`, `{background}`, `{mood}`. When executing, user fills in parameters.
+- **Batch execution:** Run the same chain across multiple parameter sets (e.g., generate the same style for 20 different products)
+- **Template gallery:** Public chain templates shared by community; curated by admin
+- **Chain linking:** Output of one chain becomes input of another (connects to Pipeline Builder)
+- **Export/import:** Export chains as JSON for sharing or backup
+
+**Chain data model:**
+```
+GenerationChain
+├── id, user_id, name, description
+├── steps_json (array of chain steps)
+├── parameters_json (defined parameters with types/defaults)
+├── is_public, is_builtin, category
+├── usage_count, created_at, updated_at
+
+ChainRun
+├── id, chain_id, user_id
+├── parameters_json (filled parameters)
+├── results (array of generation_ids)
+├── status, started_at, completed_at
+├── cost_credits, cost_quota
+```
+
+---
+
+### Phase 6 — New Routes
+
+```
+/app/projects                 → Project list
+/app/projects/:id            → Project workspace
+/app/projects/:id/settings   → Project settings & members
+/app/pipelines               → Pipeline builder
+/app/pipelines/:id           → Pipeline editor
+/app/pipelines/:id/run       → Pipeline execution view
+/app/chains                  → Chain template gallery
+/app/chains/:id              → Chain editor
+/app/team                    → Team management
+/app/team/members            → Team members & invitations
+```
+
+---
+
+### Phase 6 — New API Endpoints
+
+**Projects:**
+- `GET /api/v1/projects` — List user's projects
+- `POST /api/v1/projects` — Create project
+- `GET /api/v1/projects/:id` — Get project details
+- `PUT /api/v1/projects/:id` — Update project
+- `DELETE /api/v1/projects/:id` — Archive project
+- `GET /api/v1/projects/:id/members` — List project members
+- `POST /api/v1/projects/:id/invite` — Invite member
+- `DELETE /api/v1/projects/:id/members/:userId` — Remove member
+- `PUT /api/v1/projects/:id/members/:userId` — Update member role
+
+**Pipelines:**
+- `GET /api/v1/pipelines` — List pipelines
+- `POST /api/v1/pipelines` — Create pipeline
+- `GET /api/v1/pipelines/:id` — Get pipeline
+- `PUT /api/v1/pipelines/:id` — Update pipeline (creates new version)
+- `DELETE /api/v1/pipelines/:id` — Delete pipeline
+- `POST /api/v1/pipelines/:id/run` — Execute pipeline
+- `GET /api/v1/pipelines/:id/runs` — List pipeline runs
+- `GET /api/v1/pipelines/:id/runs/:runId` — Get run details & log
+- `POST /api/v1/pipelines/:id/export` — Export pipeline as JSON
+- `POST /api/v1/pipelines/import` — Import pipeline from JSON
+
+**Chains:**
+- `GET /api/v1/chains` — List chains (public + user's)
+- `POST /api/v1/chains` — Create chain
+- `GET /api/v1/chains/:id` — Get chain
+- `PUT /api/v1/chains/:id` — Update chain
+- `DELETE /api/v1/chains/:id` — Delete chain
+- `POST /api/v1/chains/:id/run` — Run chain with parameters
+- `GET /api/v1/chains/:id/runs` — List chain runs
+
+**Teams:**
+- `GET /api/v1/teams` — List user's teams
+- `POST /api/v1/teams` — Create team
+- `GET /api/v1/teams/:id` — Get team
+- `PUT /api/v1/teams/:id` — Update team
+- `GET /api/v1/teams/:id/members` — List team members
+- `POST /api/v1/teams/:id/invite` — Invite member to team
+- `DELETE /api/v1/teams/:id/members/:userId` — Remove member
+
+---
+
+### Phase 6 — New Components
+
+| Component | Description |
+|---|---|
+| PipelineCanvas | Visual node editor with drag-drop, connect, zoom, pan |
+| PipelineNode | Individual node in the canvas (rendered per type) |
+| PipelineSidebar | Node palette, search, drag nodes from palette to canvas |
+| PipelineConfigPanel | Configure selected node's parameters |
+| PipelineRunModal | Execute pipeline with variable input |
+| PipelineExecutionLog | Per-node status, timing, output preview |
+| ProjectCard | Project thumbnail with stats |
+| ProjectHeader | Project nav: assets, members, settings, analytics |
+| AssetLibrary | Uploaded assets grid with project-wide reference images |
+| TeamMemberTable | Member list with role badges and actions |
+| InvitationModal | Invite via email with role selection |
+| ApprovalCard | Task card for review/approve/reject workflow |
+| ChainEditor | Edit chain steps, define parameters, preview |
+| ChainParameterForm | Fill in chain parameters before execution |
+| ChainBatchRunner | Run chain across multiple parameter sets (CSV upload) |
+| TemplateGallery | Browse public chain templates |
 
 ---
 
