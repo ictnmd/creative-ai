@@ -124,8 +124,8 @@ CREATE TABLE generations (
     user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     prompt          TEXT        NOT NULL,
     enhanced_prompt TEXT,
-    provider        VARCHAR(50),
-    model           VARCHAR(100),
+    provider        VARCHAR(50) NOT NULL,
+    model           VARCHAR(100) NOT NULL,
     style_preset_id UUID        REFERENCES style_presets(id) ON DELETE SET NULL,
     reference_images TEXT[]     NOT NULL DEFAULT '{}',
     sketch_data     TEXT,
@@ -208,6 +208,8 @@ CREATE TABLE user_api_keys (
     is_active    BOOLEAN    NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_user_api_keys_user_id ON user_api_keys (user_id);
 
 -- ============================================================
 -- TABLE: system_api_keys
