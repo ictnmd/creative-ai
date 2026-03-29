@@ -3,6 +3,8 @@
 //! Database access layer providing PostgreSQL and Redis/DragonflyDB connections
 //! and repositories for data access.
 
+pub mod queries;
+
 use common::AppResult;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
