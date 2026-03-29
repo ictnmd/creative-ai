@@ -14,7 +14,7 @@
 		loading = true;
 
 		try {
-			const response = await api.post<{ user: { id: string; email: string; username: string; role: string } }>(
+			const response = await api.post<{ user: { id: string; email: string; username: string; role: string; is_verified: boolean; is_active: boolean } }>(
 				'/api/v1/auth/login',
 				{ email, password }
 			);

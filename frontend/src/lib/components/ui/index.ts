@@ -6,3 +6,4 @@ export { default as Spinner } from './Spinner.svelte';
 export { default as Dropdown } from './Dropdown.svelte';
 export { default as ImageCard } from './ImageCard.svelte';
 export { default as StatusBadge } from './StatusBadge.svelte';
+export type { GenerationStatus as Status } from '$lib/types';

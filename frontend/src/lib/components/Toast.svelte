@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { toast, type Toast } from '$stores/toast';
+	import { toast, toasts } from '$stores/toast';
+	import type { Toast } from '$stores/toast';
 	import { fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 
@@ -49,7 +50,7 @@
 	aria-live="polite"
 	aria-label="Notifications"
 >
-	{#each $toast as t (t.id)}
+	{#each $toasts as t (t.id)}
 		<div
 			animate:flip={{ duration: 200 }}
 			in:fly={{ x: 80, duration: 250 }}

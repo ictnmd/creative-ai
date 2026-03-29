@@ -1,12 +1,17 @@
 <script lang="ts">
 	import clsx from 'clsx';
+	import type { GenerationStatus } from '$lib/types';
 
-	export let status: 'pending' | 'processing' | 'completed' | 'failed';
+	export let status: GenerationStatus = 'pending';
 
-	const config = {
+	const config: Record<GenerationStatus, { label: string; class: string }> = {
 		pending: {
 			label: 'Pending',
 			class: 'bg-info/20 text-info border-info/30'
+		},
+		queued: {
+			label: 'Queued',
+			class: 'bg-accent/20 text-accent border-accent/30'
 		},
 		processing: {
 			label: 'Processing',

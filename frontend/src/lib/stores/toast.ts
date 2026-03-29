@@ -3,8 +3,8 @@
  * Manages transient toast notifications with auto-dismiss after 4 seconds.
  */
 
-import { writable } from 'svelte/store';
-import type { Writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
+import type { Writable, Readable } from 'svelte/store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -96,3 +96,9 @@ function createToastStore() {
 }
 
 export const toast = createToastStore();
+
+// Separate readable store that exposes just the toasts array, for use in templates
+export const toasts: Readable<Toast[]> = derived(
+	toast as unknown as Readable<{ toasts: Toast[] }>,
+	($t) => $t.toasts
+);

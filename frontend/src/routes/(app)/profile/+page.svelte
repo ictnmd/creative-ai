@@ -279,9 +279,8 @@
 								auth.clearUser();
 								toast.info('Account deletion scheduled. You have 30 days to cancel.');
 								await goto('/');
-							} catch (err: unknown) {
-								const apiErr = err as { message?: string };
-								toast.error(apiErr.message || 'Failed to delete account.');
+							} catch {
+								toast.error('Failed to delete account.');
 							}
 						}}
 					>
