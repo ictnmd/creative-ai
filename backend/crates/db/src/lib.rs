@@ -13,6 +13,13 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use std::sync::Arc;
 
+// Re-export query modules for ergonomic access.
+pub use queries::{
+    account_deletions, credit_transactions, follows, generations, refresh_tokens,
+    shared_generations, style_presets, subscriptions, system_api_keys, user_api_keys,
+    user_profiles, users,
+};
+
 /// Global PostgreSQL connection pool.
 static PG_POOL: OnceCell<PgPool> = OnceCell::new();
 

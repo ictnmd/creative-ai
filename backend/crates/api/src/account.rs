@@ -6,19 +6,20 @@
 use std::vec::Vec;
 
 use axum::{
-    extract::{CookieJar, State},
+    extract::State,
     http::{header::SET_COOKIE, Response, StatusCode},
     routing::post,
-    Json, Router,
+    Router,
 };
+use axum_extra::extract::{cookie::Cookie, CookieJar};
 use chrono::{Duration, Utc};
 use serde::Serialize;
 use uuid::Uuid;
 
 use common::{AppError, AppResult};
 
-use crate::auth::AuthState;
 use crate::extractors::AuthUser;
+use crate::ApiState;
 
 /// POST /api/v1/user/delete - Soft-delete account (GDPR)
 ///
@@ -26,7 +27,7 @@ use crate::extractors::AuthUser;
 ///   - Create account_deletion record (purge_after = now + 30 days)
 ///   - Revoke all refresh tokens
 ///   - Clear cookies
-pub fn routes(state: AuthState) -> Router {
+pub fn routes(state: ApiState) -> Router {
     Router::new()
         .route("/api/v1/user/delete", post(delete_account))
         .with_state(state)
@@ -55,9 +56,9 @@ pub struct DeleteAccountResponse {
 /// - All refresh tokens are revoked so existing sessions are terminated.
 /// - Auth cookies are cleared from the response.
 pub async fn delete_account(
-    State(state): State<AuthState>,
+    State(state): State<ApiState>,
     auth_user: AuthUser,
-    cookies: CookieJar,
+    _cookies: CookieJar,
 ) -> AppResult<Response<String>> {
     let user_id: Uuid = auth_user
         .user_id
@@ -65,22 +66,17 @@ pub async fn delete_account(
         .map_err(|_| AppError::Validation("invalid user id in token".to_string()))?;
 
     // Calculate purge date: 30 days from now
-    let requested_at = Utc::now();
-    let purge_after = requested_at + Duration::days(30);
+    let purge_after = Utc::now() + Duration::days(30);
 
     // Create account deletion record
-    db::queries::account_deletions::insert(state.pool(), user_id, purge_after).await?;
+    db::queries::account_deletions::insert(&state.inner.pool, user_id, purge_after).await?;
 
     // Revoke all refresh tokens for this user
-    let revoked_count = db::queries::refresh_tokens::delete_all_for_user(state.pool(), user_id)
-        .await
-        .map(|_| 0) // count not critical for now
-        .unwrap_or(0);
+    db::queries::refresh_tokens::delete_all_for_user(&state.inner.pool, user_id).await?;
 
     tracing::info!(
         user_id = %user_id,
         purge_after = %purge_after,
-        revoked_tokens = revoked_count,
         "Account deletion requested (GDPR)"
     );
 
@@ -119,11 +115,10 @@ fn clear_auth_cookies() -> Vec<String> {
     cookie_names
         .iter()
         .map(|name| {
-            axum_extra::extract::Cookie::build((**name).to_string(), "")
+            Cookie::build(((**name).to_string(), ""))
                 .path("/")
                 .http_only(true)
                 .secure(true)
-                .same_site(axum_extra::extract::SameSite::Strict)
                 .max_age(time::Duration::ZERO)
                 .to_string()
         })

@@ -52,7 +52,7 @@ fn is_worker_mode() -> bool {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = AppConfig::from_env()?;
+    let config = AppConfig::from_env();
     init_tracing(&config);
 
     if is_worker_mode() {

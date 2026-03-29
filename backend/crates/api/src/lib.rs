@@ -8,7 +8,7 @@ pub mod auth;
 pub mod extractors;
 mod users;
 
-use auth::AuthState;
+
 use axum::{
     http::StatusCode,
     response::IntoResponse,
@@ -43,19 +43,16 @@ pub struct HealthResponse {
 
 /// Create the API router with all routes.
 pub fn create_router(state: ApiState) -> Router {
-    let users_state = users::UsersState {
-        pool: state.inner.pool.clone(),
-    };
-
-    let auth_state = AuthState::new(state.clone());
+    let users = users::create_users_router(state.clone());
+    let auth = auth::create_auth_router(state.clone());
+    let account = account::routes(state.clone());
 
     Router::new()
         .route("/health", get(health_handler))
         .route("/api/v1/health", get(health_handler))
-        .merge(users::create_users_router(users_state))
-        .merge(auth::create_auth_router(auth_state.clone()))
-        .merge(account::routes(auth_state))
-        .with_state(state)
+        .merge(users)
+        .merge(auth)
+        .merge(account)
 }
 
 /// Health check endpoint.
