@@ -2,7 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task.
 
-> **IMPORTANT:** Before implementing components, use the `ui-ux-pro-max` skill to refine the color system and component designs from the spec.
+> **IMPORTANT:** Before implementing components, use the `ui-ux-pro-max` skill to refine the color system and component designs from the spec. Specify the exact output: updated tailwind.config.js CSS variables and a component design guide.
+
+> **⚠️ CRITICAL:** Every `// ...` stub comment must be fully implemented. Stubs are NOT final code.
+
+> **Known issues from review:** (1) Create `(app)/+layout.svelte` parent layout with auth guard + sidebar. (2) All component stubs must be fully implemented. (3) Add chart.js to frontend package.json. (4) Coordinate `SubscriptionCard` and `CreditPurchaseModal` with Plan 05. (5) Public profile page must include FollowerList.
 
 **Goal:** Build the complete frontend UI for Phase 1 — the creator workspace, gallery, profile, credits, and admin pages with all specified components.
 

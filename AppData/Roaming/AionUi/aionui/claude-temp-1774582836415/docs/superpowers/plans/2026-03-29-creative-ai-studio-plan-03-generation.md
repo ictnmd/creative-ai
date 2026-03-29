@@ -1,6 +1,10 @@
 # Plan 03: Generation Core
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task.
+>
+> **⚠️ CRITICAL:** Every `// ...` stub comment must be fully implemented. Stubs are NOT final code.
+>
+> **Known issues from review:** (1) Add `redis-rs` dependency to generation/Cargo.toml. (2) OpenAI, Gemini, Claude providers must be fully implemented — real API calls, response parsing, S3 upload. (3) Router must implement model-to-provider mapping. (4) Worker must implement dequeue loop, retry, WebSocket pub/sub. (5) Create `db/src/queries/generations.rs`. (6) WS endpoint path: `/ws/generations` (spec defines this). (7) Stripe billing must be fully implemented.
 
 **Goal:** Implement the core generation pipeline — provider abstraction (OpenAI, Gemini, Claude), DragonflyDB job queue, worker process, WebSocket real-time updates, S3 storage, and quota/credit billing integration.
 

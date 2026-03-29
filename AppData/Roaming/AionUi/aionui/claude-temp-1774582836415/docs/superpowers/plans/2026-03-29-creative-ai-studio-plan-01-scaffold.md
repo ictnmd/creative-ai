@@ -1,6 +1,10 @@
 # Plan 01: Project Scaffolding
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+>
+> **⚠️ CRITICAL:** Every `// ...` stub comment must be fully implemented. Stubs are NOT final code — they are high-level guidance only. Engineers implementing this plan MUST write complete, production-ready Rust/TypeScript code for all stubbed sections.
+>
+> **Known issues from review:** (1) Workspace Cargo.toml must not use trailing comma in members array. (2) Each crate needs a real `lib.rs` or `main.rs` — no empty files. (3) `api` crate must be created. (4) Remove `lapin` dependency. (5) Use explicit CORS origins from env var. (6) Remove `@supabase/supabase-js` from frontend package.json. (7) Create `(app)` route group layout.
 
 **Goal:** Set up the complete project structure — Docker Compose, Rust Axum backend, SvelteKit frontend, PostgreSQL schema, DragonflyDB, and S3 integration.
 
@@ -228,7 +232,6 @@ COPY . .
 RUN cargo build --release --bin app --bin worker
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists
 COPY --from=builder /app/target/release/app /usr/local/bin/app
 COPY --from=builder /app/target/release/worker /usr/local/bin/worker
 COPY --from=builder /app/migrations /migrations

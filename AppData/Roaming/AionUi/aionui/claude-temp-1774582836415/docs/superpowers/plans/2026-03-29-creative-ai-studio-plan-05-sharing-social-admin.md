@@ -1,6 +1,10 @@
 # Plan 05: Sharing, Social & Admin Features
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task.
+>
+> **⚠️ CRITICAL:** Every `// ...` stub comment must be fully implemented. Stubs are NOT final code.
+
+> **Known issues from review:** (1) All crate files (`lib.rs`, API handlers) must be fully implemented — no empty stubs. (2) Share token generation: use `nanoid!` or `uuid` with URL-safe encoding. (3) Content moderation flow must be specified. (4) Coordinate `api/src/social.rs` — Plan 02 imports from it, so Plan 05 creates it first. (5) Create admin analytics DB queries. (6) Public profile page must include FollowerList component.
 
 **Goal:** Implement sharing (public links, profiles), follow system, and admin dashboard (moderation, analytics, system API keys).
 

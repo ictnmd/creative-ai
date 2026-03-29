@@ -1,6 +1,10 @@
 # Plan 02: Auth + User Profiles
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task.
+>
+> **⚠️ CRITICAL:** Every `// ...` stub comment must be fully implemented. Stubs are NOT final code.
+>
+> **Known issues from review:** (1) OAuth MUST implement PKCE (code_verifier, code_challenge, code_challenge_method=S256). (2) All route handlers (register, login, logout, refresh, revoke-all, OAuth callback) must be fully implemented — no empty stubs. (3) Refresh token rotation: issue new token, invalidate old token in DB. (4) User extractor has a bug — fix the AuthUser extraction logic. (5) Password validation: min 8 chars + letter + number + special char. (6) Coordinate `api/src/social.rs` with Plan 05 — Plan 05 creates it.
 
 **Goal:** Implement full authentication system (email/password + OAuth) and user profile management with JWT, refresh tokens, and GDPR account deletion.
 
