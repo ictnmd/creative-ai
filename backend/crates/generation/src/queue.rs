@@ -5,7 +5,7 @@
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -42,12 +42,12 @@ pub struct GenerationUpdate {
 /// DragonflyDB-backed queue for generation jobs.
 #[derive(Clone)]
 pub struct Queue {
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
 }
 
 impl Queue {
-    /// Create a new Queue wrapping an existing multiplexed connection.
-    pub fn new(conn: MultiplexedConnection) -> Self {
+    /// Create a new Queue wrapping an existing connection manager.
+    pub fn new(conn: ConnectionManager) -> Self {
         Self { conn }
     }
 

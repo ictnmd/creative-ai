@@ -5,8 +5,13 @@
 
 pub mod account;
 pub mod auth;
+pub mod billing;
 pub mod extractors;
+pub mod generations;
+pub mod presets;
+pub mod reference;
 mod users;
+pub mod ws_generations;
 
 
 use axum::{
@@ -46,6 +51,11 @@ pub fn create_router(state: ApiState) -> Router {
     let users = users::create_users_router(state.clone());
     let auth = auth::create_auth_router(state.clone());
     let account = account::routes(state.clone());
+    let generations = generations::create_generations_router(state.clone());
+    let billing = billing::create_billing_router(state.clone());
+    let presets = presets::create_presets_router(state.clone());
+    let reference = reference::create_reference_router(state.clone());
+    let ws_generations = ws_generations::ws_router(state);
 
     Router::new()
         .route("/health", get(health_handler))
@@ -53,6 +63,11 @@ pub fn create_router(state: ApiState) -> Router {
         .merge(users)
         .merge(auth)
         .merge(account)
+        .merge(generations)
+        .merge(billing)
+        .merge(presets)
+        .merge(reference)
+        .merge(ws_generations)
 }
 
 /// Health check endpoint.

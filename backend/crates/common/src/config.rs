@@ -37,10 +37,12 @@ pub struct AppConfig {
     pub s3_access_key: String,
     pub s3_secret_key: String,
     pub s3_bucket: String,
+    pub s3_region: String,
     pub jwt_secret: String,
 
     // Backend-only
     pub stripe_secret_key: Option<String>,
+    pub stripe_webhook_secret: Option<String>,
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub github_client_id: Option<String>,
@@ -81,6 +83,7 @@ impl AppConfig {
         let s3_access_key = env::var("S3_ACCESS_KEY").expect("S3_ACCESS_KEY must be set");
         let s3_secret_key = env::var("S3_SECRET_KEY").expect("S3_SECRET_KEY must be set");
         let s3_bucket = env::var("S3_BUCKET").expect("S3_BUCKET must be set");
+        let s3_region = env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
         let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
 
         let frontend_url = env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
@@ -96,6 +99,7 @@ impl AppConfig {
         let cors_origins = parse_cors_origins(&cors_origins_str);
 
         let stripe_secret_key = env::var("STRIPE_SECRET_KEY").ok();
+        let stripe_webhook_secret = env::var("STRIPE_WEBHOOK_SECRET").ok();
         let google_client_id = env::var("GOOGLE_CLIENT_ID").ok();
         let google_client_secret = env::var("GOOGLE_CLIENT_SECRET").ok();
         let github_client_id = env::var("GITHUB_CLIENT_ID").ok();
@@ -112,8 +116,10 @@ impl AppConfig {
             s3_access_key,
             s3_secret_key,
             s3_bucket,
+            s3_region,
             jwt_secret,
             stripe_secret_key,
+            stripe_webhook_secret,
             google_client_id,
             google_client_secret,
             github_client_id,

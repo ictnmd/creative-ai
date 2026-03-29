@@ -9,7 +9,6 @@ members = [
     "crates/generation",
     "crates/storage",
     "crates/sharing",
-    "crates/billing",
     "crates/app",
     "crates/worker"
 ]
@@ -84,6 +83,7 @@ config = "0.14"
 validator = { version = "0.19", features = ["derive"] }
 
 # Crypto / Hashing
+hmac = "0.12"
 sha2 = "0.10"
 url = "2.5"
 

@@ -8,6 +8,7 @@ pub mod user_profiles;
 pub mod follows;
 pub mod account_deletions;
 pub mod style_presets;
+pub mod presets;
 pub mod generations;
 pub mod subscriptions;
 pub mod credit_transactions;

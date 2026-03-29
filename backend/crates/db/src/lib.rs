@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 // Re-export query modules for ergonomic access.
 pub use queries::{
-    account_deletions, credit_transactions, follows, generations, refresh_tokens,
+    account_deletions, credit_transactions, follows, generations, presets, refresh_tokens,
     shared_generations, style_presets, subscriptions, system_api_keys, user_api_keys,
     user_profiles, users,
 };
