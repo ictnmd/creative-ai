@@ -4,8 +4,8 @@
 //! email sending, and other long-running operations.
 //!
 //! Usage:
-//!   - Without `--worker` flag: runs as API server (app mode)
-//!   - With `--worker` flag: runs as background worker (worker mode)
+//!   - With `--worker` flag (or `-w`): runs as background worker (default in production)
+//!   - Without `--worker` flag: runs as API server (for local development only)
 
 use common::AppConfig;
 use std::env;
@@ -24,7 +24,7 @@ fn init_tracing(config: &AppConfig) {
 }
 
 /// Run the background worker process.
-async fn run_worker(config: AppConfig) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_worker(config: AppConfig) -> anyhow::Result<()> {
     info!("Starting Creative AI Studio Worker process");
     info!("Environment: {}", config.environment);
     info!(
@@ -35,37 +35,56 @@ async fn run_worker(config: AppConfig) -> Result<(), Box<dyn std::error::Error>>
     );
 
     // Worker loop - process jobs from the queue
-    // This is a placeholder that will be implemented with the actual job processing logic
+    // TODO(Plan 03): Implement actual job processing with DragonflyDB queue
     info!("Worker is ready and listening for jobs");
 
-    // For now, just keep the worker running
-    // In production, this would connect to Redis/DragonflyDB for job queues
+    // Keep the worker running until interrupted
     tokio::signal::ctrl_c().await?;
 
     info!("Worker shutting down gracefully");
     Ok(())
 }
 
-/// Run the API server mode (fallback when not using dedicated app binary).
-async fn run_api(config: AppConfig) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Starting Creative AI Studio API server (worker mode)");
-    info!("Environment: {}", config.environment);
-    info!("{} CORS origins configured", config.cors_origins.len());
+/// Detect if --worker flag was passed.
+fn is_worker_mode() -> bool {
+    env::args().any(|arg| arg == "--worker" || arg == "-w")
+}
 
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = AppConfig::from_env()?;
+    init_tracing(&config);
+
+    if is_worker_mode() {
+        info!("Mode: BACKGROUND WORKER");
+        run_worker(config).await?;
+    } else {
+        info!("Mode: API SERVER (development only)");
+        info!("For production, use: cargo run --bin app");
+        // In development, allow running API server from worker binary
+        // This enables `cargo run --bin worker` without --worker for quick testing
+        // Production should always use the app binary
+        run_api_server(config).await?;
+    }
+
+    Ok(())
+}
+
+/// Run the API server (for development convenience only).
+async fn run_api_server(config: AppConfig) -> anyhow::Result<()> {
     use axum::{
-        http::{Method, StatusCode},
+        http::Method,
         response::IntoResponse,
         routing::get,
         Router,
     };
     use tower_http::{cors::CorsLayer, trace::TraceLayer};
-    use std::net::SocketAddr;
 
     #[derive(Clone)]
     struct ApiState;
 
     async fn health() -> impl IntoResponse {
-        (StatusCode::OK, "healthy")
+        (axum::http::StatusCode::OK, "healthy")
     }
 
     let cors = CorsLayer::new()
@@ -76,7 +95,7 @@ async fn run_api(config: AppConfig) -> Result<(), Box<dyn std::error::Error>> {
                 .map(|origin| {
                     origin
                         .parse::<axum::http::HeaderValue>()
-                        .unwrap_or_else(|_| "http://localhost:3000".parse().unwrap())
+                        .unwrap_or_else(|_| "http://localhost:5173".parse().unwrap())
                 })
                 .collect::<Vec<_>>(),
         )
@@ -103,36 +122,11 @@ async fn run_api(config: AppConfig) -> Result<(), Box<dyn std::error::Error>> {
         .parse::<u16>()
         .unwrap_or(8080);
 
-    let addr: SocketAddr = format!("{}:{}", host, port).parse().expect("Invalid socket address");
+    let addr: std::net::SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("API server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
-
-    Ok(())
-}
-
-/// Detect if --worker flag was passed.
-fn is_worker_mode() -> bool {
-    env::args().any(|arg| arg == "--worker" || arg == "-w")
-}
-
-/// Main entry point.
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load configuration from environment
-    let config = AppConfig::from_env();
-
-    // Initialize tracing
-    init_tracing(&config);
-
-    if is_worker_mode() {
-        info!("Mode: BACKGROUND WORKER");
-        run_worker(config).await?;
-    } else {
-        info!("Mode: API SERVER");
-        run_api(config).await?;
-    }
 
     Ok(())
 }
