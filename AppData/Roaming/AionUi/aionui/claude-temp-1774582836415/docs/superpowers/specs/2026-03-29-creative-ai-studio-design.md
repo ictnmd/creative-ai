@@ -83,6 +83,19 @@ A multi-user creative AI platform for generating images via multiple providers (
 8. Frontend polls `/generations/:id/status` or receives via WebSocket
 9. Results displayed in results area
 
+### 3.4 Worker Architecture
+
+The generation worker is a **separate Rust process** (same binary, `--worker` flag) that:
+- Connects to DragonflyDB for the job queue (BRPOPLPUSH pattern)
+- Connects to PostgreSQL for generation records and user API keys
+- Connects to S3 for upload/download
+- Scales **horizontally**: run N worker instances behind a load balancer
+- Workers are **stateless**: no shared state between instances
+- Each worker processes **one generation at a time** with configurable concurrency
+- On startup, workers register with DragonflyDB (health check key with TTL)
+- Failed jobs are re-queued with a delay (max 3 retries, then marked `failed`)
+- Workers use exponential backoff between retries when provider APIs are rate-limited
+
 ### 3.3 Credit/Quota Priority
 
 - **Order:** Quota → Credits
@@ -104,7 +117,7 @@ A multi-user creative AI platform for generating images via multiple providers (
 | name | VARCHAR(100) | Display name |
 | avatar_url | TEXT | Nullable |
 | auth_provider | ENUM | google, github, email |
-| subscription_tier | ENUM | free, basic, pro, unlimited |
+| subscription_tier | ENUM | free, basic, pro, unlimited | Derived from active Subscription. Updated within same DB transaction as any subscription change. |
 | role | ENUM | user, admin |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
@@ -162,6 +175,8 @@ A multi-user creative AI platform for generating images via multiple providers (
 | created_at | TIMESTAMP | |
 
 > **Note:** `quota_used` is NOT stored. It is computed at query time as `COUNT(*) FROM generation WHERE user_id = ? AND created_at >= starts_at`. This avoids the need for a reset mechanism and guarantees accuracy. Cache computed quota in DragonflyDB with TTL = 5 minutes.
+>
+> **Expired/cancelled subscription:** When `Subscription.status = cancelled` or `expires_at < NOW()`, the user's effective tier is `free` and `quota_monthly` is treated as 0. The system always uses the active subscription with `status = active` and `expires_at > NOW()`. If no active subscription exists, tier falls back to `free`.
 
 ### CreditTransaction
 | Field | Type | Notes |
@@ -207,6 +222,17 @@ A multi-user creative AI platform for generating images via multiple providers (
 | following_id | UUID | FK → User (the one being followed) |
 | created_at | TIMESTAMP | |
 | | | PRIMARY KEY (follower_id, following_id) |
+
+### AccountDeletion
+| Field | Type | Notes |
+|---|---|---|
+| user_id | UUID | FK → User |
+| deleted_at | TIMESTAMP | Soft-delete timestamp |
+| purge_after | TIMESTAMP | When data should be permanently erased (30 days) |
+
+> **Account Deletion Flow:** When a user deletes their account, the system performs a soft-delete (sets `deleted_at`). All personally identifiable data is purged after 30 days (GDPR compliance). During the 30-day grace period, the user can contact support to restore. Generated images stored in S3 are scheduled for deletion at `purge_after`. All refresh tokens are revoked immediately.
+
+---
 
 ### UserAPIKey (user bring-your-own)
 | Field | Type | Notes |
@@ -314,14 +340,17 @@ A multi-user creative AI platform for generating images via multiple providers (
 **Base URL:** `/api/v1`
 
 ### Auth
+> **Base path:** `/auth` (these endpoints live outside `/api/v1` for OAuth redirect compatibility). All state-changing endpoints also validate `Sec-Fetch-Site` and `Origin` headers.
+
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | /auth/register | Email/password registration |
 | POST | /auth/login | Login, returns JWT |
 | POST | /auth/oauth/:provider | Initiate OAuth (Google/GitHub). Requires PKCE + state param for CSRF protection. State param stored in DragonflyDB with 10-min TTL. |
 | GET | /auth/oauth/:provider/callback | OAuth callback, validates state param, exchanges code for token |
-| POST | /auth/refresh | Refresh JWT (refresh token rotation) |
-| POST | /auth/logout | Invalidate session + refresh token |
+| POST | /auth/refresh | Refresh JWT (refresh token rotation). Body: `{ refresh_token: string }`. Returns new access + refresh token. Old refresh token invalidated. |
+| POST | /auth/logout | Invalidate current session. Body: `{ refresh_token?: string }` (optional — if provided, revokes that specific refresh token) |
+| POST | /auth/revoke-all | Revoke all refresh tokens for user (logout everywhere) |
 
 ### Generations
 | Method | Endpoint | Description |
@@ -335,8 +364,8 @@ A multi-user creative AI platform for generating images via multiple providers (
 
 #### WebSocket Protocol — `/generations/stream`
 
-- **Connection:** `wss://api.example.com/ws/generations?token=<jwt>`
-- **Auth:** JWT passed as query param, validated on connection
+- **Connection:** `wss://api.example.com/ws/generations`
+- **Auth:** JWT passed via `Authorization: Bearer <jwt>` header during WebSocket upgrade handshake. Not as query param (query params leak in logs/referrers).
 - **Client → Server (subscribe):**
   ```json
   { "type": "subscribe", "generation_id": "uuid-here" }
@@ -390,8 +419,8 @@ A multi-user creative AI platform for generating images via multiple providers (
 |---|---|---|
 | POST | /users/:username/follow | Follow a user |
 | DELETE | /users/:username/follow | Unfollow a user |
-| GET | /users/:username/followers | List followers (paginated) |
-| GET | /users/:username/following | List following (paginated) |
+| GET | /users/:username/followers | List followers. Query params: `?page=`, `?limit=` |
+| GET | /users/:username/following | List following. Query params: `?page=`, `?limit=` |
 
 ### Admin
 | Method | Endpoint | Description |
