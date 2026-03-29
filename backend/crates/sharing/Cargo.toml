@@ -17,4 +17,5 @@ async-trait.workspace = true
 tracing.workspace = true
 chrono.workspace = true
 uuid.workspace = true
-rand.workspace = true
+sqlx.workspace = true
+nanoid = "0.4"

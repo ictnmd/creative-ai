@@ -12,6 +12,7 @@ common = { path = "../common" }
 db = { path = "../db" }
 generation = { path = "../generation" }
 models = { path = "../models" }
+sharing = { path = "../sharing" }
 storage = { path = "../storage" }
 tokio.workspace = true
 serde.workspace = true
