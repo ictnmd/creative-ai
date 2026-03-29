@@ -82,6 +82,10 @@ config = "0.14"
 # Validation
 validator = { version = "0.19", features = ["derive"] }
 
+# Crypto / Hashing
+sha2 = "0.10"
+url = "2.5"
+
 # Utils
 bytes = "1.9"
 futures = "0.3"
