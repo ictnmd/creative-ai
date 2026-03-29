@@ -1,0 +1,107 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/models",
+    "crates/api",
+    "crates/auth",
+    "crates/db",
+    "crates/generation",
+    "crates/storage",
+    "crates/sharing",
+    "crates/billing",
+    "crates/app",
+    "crates/worker"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Creative AI Studio Team"]
+license = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+serde_with = { version = "3.11", features = ["chrono_0_4"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Web framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+hyper = { version = "1.5", features = ["full"] }
+http = "1.1"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "uuid", "json"] }
+
+# Redis
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager", "rustls"] }
+
+# AWS / S3 (versions must be from the same SDK release train)
+aws-config = "1.4"
+aws-sdk-s3 = "1.4"
+aws-smithy-http = "0.57"
+aws-types = "1.3"
+
+# Authentication
+jsonwebtoken = "9.3"
+argon2 = "0.5"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+tracing-appender = "0.2"
+opentelemetry = "0.25"
+opentelemetry-otlp = "0.25"
+tracing-opentelemetry = "0.25"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# IDs
+uuid = { version = "1.11", features = ["v4", "serde"] }
+
+# Environment
+dotenvy = "0.15"
+config = "0.14"
+
+# Validation
+validator = { version = "0.19", features = ["derive"] }
+
+# Utils
+bytes = "1.9"
+futures = "0.3"
+once_cell = "1.20"
+parking_lot = "0.12"
+rand = "0.8"
+bcrypt = "0.16"
+
+# Date/Time
+time = "0.3"
+
+# Image processing
+image = "0.25"
+base64 = "0.22"
+
+# Rate limiting
+governor = "0.7"
+
+# Email
+lettre = { version = "0.11", features = ["tokio1-native-tls", "smtp-transport", "builder"] }
+
+# Pagination
+paginate = "1.1"
