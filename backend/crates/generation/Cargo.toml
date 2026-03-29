@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 common = { path = "../common" }
 models = { path = "../models" }
+db = { path = "../db" }
+storage = { path = "../storage" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -22,3 +24,5 @@ bytes.workspace = true
 futures.workspace = true
 image.workspace = true
 base64.workspace = true
+redis.workspace = true
+sqlx.workspace = true

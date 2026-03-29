@@ -3,6 +3,11 @@
 //! AI image generation engine supporting multiple providers (OpenAI, Gemini, Anthropic).
 //! Handles prompt processing, model routing, and result handling.
 
+pub mod enhance;
+pub mod providers;
+pub mod queue;
+pub mod worker;
+
 use common::AppResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
