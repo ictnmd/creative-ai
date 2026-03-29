@@ -1,7 +1,5 @@
 <script lang="ts">
-	import type { LayoutData } from './$types';
-
-	export let data: LayoutData;
+	// Auth guard will be implemented in Plan 02
 </script>
 
 <slot />

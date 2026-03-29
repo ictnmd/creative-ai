@@ -4,7 +4,7 @@
  * Uses PUBLIC_API_URL environment variable for the base URL.
  */
 
-const BASE_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:3001';
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export interface ApiError {
 	message: string;
