@@ -18,19 +18,29 @@ pub struct JwtService {
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
     validation: Validation,
+    issuer: String,
+    audience: String,
 }
 
 impl JwtService {
     /// Create a new JwtService from a secret string.
-    pub fn new(secret: &str) -> Self {
+    ///
+    /// `issuer` is the token issuer (e.g., "creative-ai-studio").
+    /// `audience` is the intended recipient (e.g., "creative-ai-studio-api").
+    pub fn new(secret: &str, issuer: &str, audience: &str) -> Self {
         let encoding_key = EncodingKey::from_secret(secret.as_bytes());
         let decoding_key = DecodingKey::from_secret(secret.as_bytes());
-        let validation = Validation::default();
+
+        let mut validation = Validation::default();
+        validation.set_issuer(&[issuer]);
+        validation.set_audience(&[audience]);
 
         Self {
             encoding_key,
             decoding_key,
             validation,
+            issuer: issuer.to_string(),
+            audience: audience.to_string(),
         }
     }
 
@@ -55,9 +65,12 @@ impl JwtService {
             exp: (now + Duration::minutes(ACCESS_TOKEN_EXPIRY_MINUTES)).timestamp(),
             iat: now.timestamp(),
             token_type: TokenType::Access,
+            iss: self.issuer.clone(),
+            aud: self.audience.clone(),
         };
 
-        encode(&Header::default(), &claims, &self.encoding_key)
+        let header = Header::new(jsonwebtoken::Algorithm::HS256);
+        encode(&header, &claims, &self.encoding_key)
             .map_err(AppError::Jwt)
     }
 
@@ -93,9 +106,12 @@ impl JwtService {
             exp: (now + Duration::days(REFRESH_TOKEN_EXPIRY_DAYS)).timestamp(),
             iat: now.timestamp(),
             token_type: TokenType::Refresh,
+            iss: self.issuer.clone(),
+            aud: self.audience.clone(),
         };
 
-        encode(&Header::default(), &claims, &self.encoding_key)
+        let header = Header::new(jsonwebtoken::Algorithm::HS256);
+        encode(&header, &claims, &self.encoding_key)
             .map_err(AppError::Jwt)
     }
 
@@ -146,6 +162,10 @@ pub struct Claims {
     pub iat: i64,
     /// Token type discriminator.
     pub token_type: TokenType,
+    /// Issuer claim: identifies the principal that issued the JWT.
+    pub iss: String,
+    /// Audience claim: identifies the recipients that the JWT is intended for.
+    pub aud: String,
 }
 
 /// JWT claims for refresh tokens.
@@ -165,6 +185,10 @@ pub struct RefreshClaims {
     pub iat: i64,
     /// Token type discriminator.
     pub token_type: TokenType,
+    /// Issuer claim.
+    pub iss: String,
+    /// Audience claim.
+    pub aud: String,
 }
 
 #[cfg(test)]
@@ -173,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_generate_and_verify_access_token() {
-        let service = JwtService::new("test-secret-key-12345");
+        let service = JwtService::new("test-secret-key-12345", "test-issuer", "test-audience");
         let token = service
             .generate_token("user-123", "testuser", "user")
             .expect("token generation should succeed");
@@ -190,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_generate_and_verify_refresh_token() {
-        let service = JwtService::new("test-secret-key-12345");
+        let service = JwtService::new("test-secret-key-12345", "test-issuer", "test-audience");
         let token = service
             .generate_refresh_token("user-456")
             .expect("refresh token generation should succeed");
@@ -205,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_wrong_token_type_fails() {
-        let service = JwtService::new("test-secret-key-12345");
+        let service = JwtService::new("test-secret-key-12345", "test-issuer", "test-audience");
 
         let access_token = service
             .generate_token("user-123", "testuser", "user")
@@ -217,15 +241,15 @@ mod tests {
 
     #[test]
     fn test_invalid_token_fails() {
-        let service = JwtService::new("test-secret-key-12345");
+        let service = JwtService::new("test-secret-key-12345", "test-issuer", "test-audience");
         let result = service.verify_token("not.a.valid.token");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_different_secret_fails() {
-        let service1 = JwtService::new("secret-one");
-        let service2 = JwtService::new("secret-two");
+        let service1 = JwtService::new("secret-one", "test-issuer", "test-audience");
+        let service2 = JwtService::new("secret-two", "test-issuer", "test-audience");
 
         let token = service1
             .generate_token("user-123", "testuser", "user")
@@ -233,5 +257,20 @@ mod tests {
 
         let result = service2.verify_token(&token);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_iss_aud_claims() {
+        let service = JwtService::new("secret", "creative-ai-studio", "creative-ai-studio-api");
+        let token = service
+            .generate_token("user-123", "testuser", "user")
+            .expect("token generation should succeed");
+
+        let claims = service
+            .verify_token(&token)
+            .expect("token verification should succeed");
+
+        assert_eq!(claims.iss, "creative-ai-studio");
+        assert_eq!(claims.aud, "creative-ai-studio-api");
     }
 }
