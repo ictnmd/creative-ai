@@ -723,13 +723,9 @@ async fn oauth_callback(
     let access_ck = access_cookie(&access_token, is_prod);
     let refresh_ck = refresh_cookie_fn(&refresh_token, is_prod);
 
-    // Redirect to frontend with tokens in query params for JS to extract
-    let redirect_url = format!(
-        "{}/auth/callback?access_token={}&refresh_token={}",
-        config.frontend_url,
-        urlencoding::encode(&access_token),
-        urlencoding::encode(&refresh_token),
-    );
+    // Redirect to frontend callback page. Tokens are already set as httpOnly cookies
+    // via the Set-Cookie headers below. The callback page can read them from cookies.
+    let redirect_url = format!("{}/auth/callback", config.frontend_url);
 
     let mut response = Response::new(axum::body::Body::empty());
     *response.status_mut() = StatusCode::FOUND;
