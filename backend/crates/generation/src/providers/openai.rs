@@ -6,17 +6,21 @@ use super::{download_image, AspectRatio, GenerationRequest, GenerationResponse, 
 use async_trait::async_trait;
 use std::time::Instant;
 
-const BASE_URL: &str = "https://api.openai.com/v1/images/generations";
+const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/images/generations";
 
 /// OpenAI DALL-E image generation provider.
 #[derive(Clone)]
 pub struct OpenAIProvider {
     api_key: Option<String>,
+    base_url: String,
 }
 
 impl OpenAIProvider {
-    pub fn new(api_key: Option<String>) -> Self {
-        Self { api_key }
+    pub fn new(api_key: Option<String>, base_url: Option<String>) -> Self {
+        Self {
+            api_key,
+            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
+        }
     }
 
     fn model_size(&self, model: &str, aspect_ratio: AspectRatio) -> Result<String, ImageProviderError> {
@@ -111,7 +115,7 @@ impl ImageProvider for OpenAIProvider {
         };
 
         let response = client
-            .post(BASE_URL)
+            .post(&self.base_url)
             .header("Authorization", format!("Bearer {}", effective_key))
             .header("Content-Type", "application/json")
             .json(&body)

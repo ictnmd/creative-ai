@@ -5,6 +5,10 @@
 //! updates the database. Implements retry with exponential backoff.
 
 use crate::queue::{GenerationJob, Queue};
+use crate::providers::{
+    AspectRatio, ClaudeProvider, GenerationRequest, GenerationResponse, GeminiProvider,
+    ImageFormat, ImageProvider, OpenAIProvider,
+};
 use common::AppConfig;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -27,6 +31,53 @@ impl GenerationWorker {
             pool,
             config,
         }
+    }
+
+    /// Route a generation request to the appropriate provider and execute it.
+    async fn route_and_generate(
+        &self,
+        model: &str,
+        request: &crate::providers::GenerationRequest,
+    ) -> anyhow::Result<crate::providers::GenerationResponse> {
+        let model_lower = model.to_lowercase();
+
+        if model_lower.contains("dall-e") || model_lower.contains("openai") {
+            let provider = crate::providers::OpenAIProvider::new(
+                self.config.openai_api_key.clone(),
+                self.config.openai_base_url.clone(),
+            );
+            if !provider.is_available() {
+                anyhow::bail!("OpenAI provider not available (no API key)");
+            }
+            return provider
+                .generate("", request)
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e));
+
+        } else if model_lower.contains("imagen") || model_lower.contains("gemini") {
+            let provider = crate::providers::GeminiProvider::new(
+                self.config.gemini_api_key.clone(),
+                self.config.gemini_base_url.clone(),
+            );
+            if !provider.is_available() {
+                anyhow::bail!("Gemini provider not available (no API key)");
+            }
+            return provider
+                .generate("", request)
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e));
+
+        } else if model_lower.contains("claude") {
+            let provider = crate::providers::ClaudeProvider::new(
+                self.config.anthropic_base_url.clone(),
+            );
+            return provider
+                .generate("", request)
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e));
+        }
+
+        anyhow::bail!("unsupported model: {}", model)
     }
 
     /// Run the main worker loop: dequeue jobs, process them, handle retries.
@@ -107,19 +158,20 @@ impl GenerationWorker {
             .map_err(|e| anyhow::anyhow!("DB update failed: {}", e))?;
 
         // Build the GenerationRouter and generate
-        let router = GenerationRouter::new();
-        let input = crate::GenerationInput {
+        let config = &self.config;
+
+        // Build GenerationRequest from the job
+        let request = crate::providers::GenerationRequest {
             prompt: job.enhanced_prompt.clone().unwrap_or_else(|| job.prompt.clone()),
             negative_prompt: None,
-            width: 1024,
-            height: 1024,
-            model: Some(job.model.clone()),
-            seed: None,
-            steps: None,
-            guidance_scale: None,
+            num_images: 1,
+            aspect_ratio: crate::providers::AspectRatio::Ratio1x1,
+            model: job.model.clone(),
+            format: crate::providers::ImageFormat::Png,
         };
 
-        let output = router.generate(input).await?;
+        // Route to the appropriate provider based on model prefix
+        let output = self.route_and_generate(&job.model, &request).await?;
 
         // Download the generated image bytes and upload to S3
         let s3_key = format!("generations/{}/{}.png", job.generation_id, 0);
@@ -133,7 +185,7 @@ impl GenerationWorker {
         .await?;
 
         let s3_url = storage
-            .upload_bytes(&s3_key, output.image_data, "image/png")
+            .upload_bytes(&s3_key, output.images[0].bytes.clone(), "image/png")
             .await?;
 
         // Update DB with output URL and status

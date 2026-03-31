@@ -6,17 +6,21 @@ use super::{AspectRatio, GenerationRequest, GenerationResponse, ImageFormat, Ima
 use async_trait::async_trait;
 use std::time::Instant;
 
-const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /// Google Gemini Imagen image generation provider.
 #[derive(Clone)]
 pub struct GeminiProvider {
     api_key: Option<String>,
+    base_url: String,
 }
 
 impl GeminiProvider {
-    pub fn new(api_key: Option<String>) -> Self {
-        Self { api_key }
+    pub fn new(api_key: Option<String>, base_url: Option<String>) -> Self {
+        Self {
+            api_key,
+            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
+        }
     }
 
     fn gemini_aspect_ratio(&self, ratio: AspectRatio) -> &'static str {
@@ -94,7 +98,7 @@ impl ImageProvider for GeminiProvider {
 
         let url = format!(
             "{}/{}/samplerInfo?key={}",
-            BASE_URL, model_name, effective_key
+            self.base_url, model_name, effective_key
         );
 
         let response = client

@@ -80,7 +80,7 @@ pub trait GenerationService: Send + Sync {
 
 /// Generation router that routes requests to the appropriate provider.
 pub struct GenerationRouter {
-    services: Vec<Arc<dyn GenerationService>>,
+    services: Vec<Arc<dyn providers::ImageProvider>>,
 }
 
 impl GenerationRouter {
@@ -90,22 +90,21 @@ impl GenerationRouter {
     }
 
     /// Add a generation service.
-    pub fn add_service(&mut self, service: Arc<dyn GenerationService>) {
+    pub fn add_service(&mut self, service: Arc<dyn providers::ImageProvider>) {
         self.services.push(service);
     }
 
     /// Generate using the best available provider.
-    pub async fn generate(&self, input: GenerationInput) -> AppResult<GenerationOutput> {
-        let provider = input.model.as_deref().unwrap_or("openai");
-
+    pub async fn generate(&self, model: &str, request: &providers::GenerationRequest) -> AppResult<providers::GenerationResponse> {
         let service = self.services.iter().find(|s| {
-            let p = format!("{:?}", s.provider()).to_lowercase();
-            p.contains(&provider.to_lowercase())
+            let p = s.name().to_lowercase();
+            p.contains(&model.to_lowercase())
         }).ok_or_else(|| {
-            common::AppError::Generation(format!("No available generation provider for: {}", provider))
+            common::AppError::Generation(format!("No available generation provider for: {}", model))
         })?;
 
-        service.generate(input).await
+        // Pass empty string - each provider has its own API key
+        service.generate("", request).await.map_err(common::AppError::from)
     }
 }
 
