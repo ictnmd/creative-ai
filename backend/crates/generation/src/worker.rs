@@ -5,10 +5,7 @@
 //! updates the database. Implements retry with exponential backoff.
 
 use crate::queue::{GenerationJob, Queue};
-use crate::providers::{
-    AspectRatio, ClaudeProvider, GenerationRequest, GenerationResponse, GeminiProvider,
-    ImageFormat, ImageProvider, OpenAIProvider,
-};
+use crate::GenerationRouter;
 use common::AppConfig;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -16,68 +13,36 @@ use tracing::{error, info, warn};
 const MAX_RETRIES: u32 = 3;
 const BASE_BACKOFF_SECS: u64 = 2;
 
-/// Worker state holding connections to DragonflyDB, PostgreSQL, and S3.
+/// Worker state holding connections to DragonflyDB, PostgreSQL, S3, and generation router.
 pub struct GenerationWorker {
     queue: Queue,
     pool: sqlx::PgPool,
     config: AppConfig,
+    router: GenerationRouter,
 }
 
 impl GenerationWorker {
     /// Create a new generation worker.
     pub fn new(queue: Queue, pool: sqlx::PgPool, config: AppConfig) -> Self {
+        let router = GenerationRouter::new_with_config(&config);
         Self {
             queue,
             pool,
             config,
+            router,
         }
     }
 
-    /// Route a generation request to the appropriate provider and execute it.
-    async fn route_and_generate(
-        &self,
-        model: &str,
-        request: &crate::providers::GenerationRequest,
-    ) -> anyhow::Result<crate::providers::GenerationResponse> {
-        let model_lower = model.to_lowercase();
-
-        if model_lower.contains("dall-e") || model_lower.contains("openai") {
-            let provider = crate::providers::OpenAIProvider::new(
-                self.config.openai_api_key.clone(),
-                self.config.openai_base_url.clone(),
-            );
-            if !provider.is_available() {
-                anyhow::bail!("OpenAI provider not available (no API key)");
-            }
-            return provider
-                .generate("", request)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e));
-
-        } else if model_lower.contains("imagen") || model_lower.contains("gemini") {
-            let provider = crate::providers::GeminiProvider::new(
-                self.config.gemini_api_key.clone(),
-                self.config.gemini_base_url.clone(),
-            );
-            if !provider.is_available() {
-                anyhow::bail!("Gemini provider not available (no API key)");
-            }
-            return provider
-                .generate("", request)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e));
-
-        } else if model_lower.contains("claude") {
-            let provider = crate::providers::ClaudeProvider::new(
-                self.config.anthropic_base_url.clone(),
-            );
-            return provider
-                .generate("", request)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e));
+    /// Map an aspect ratio string from the job to (width, height).
+    fn aspect_ratio_dims(&self, ratio: &str) -> (u32, u32) {
+        match ratio {
+            "1:1" => (1024, 1024),
+            "16:9" => (1792, 1024),
+            "9:16" => (1024, 1792),
+            "4:3" => (1024, 768),
+            "3:4" => (768, 1024),
+            _ => (1024, 1024),
         }
-
-        anyhow::bail!("unsupported model: {}", model)
     }
 
     /// Run the main worker loop: dequeue jobs, process them, handle retries.
@@ -144,8 +109,6 @@ impl GenerationWorker {
 
     /// Execute a generation job: route to provider, upload to S3, update DB.
     async fn execute_job(&self, job: &GenerationJob) -> anyhow::Result<()> {
-        use crate::GenerationRouter;
-
         // Notify: processing
         self.queue
             .publish_update(job.generation_id, "processing", "Starting generation...")
@@ -157,21 +120,22 @@ impl GenerationWorker {
             .await
             .map_err(|e| anyhow::anyhow!("DB update failed: {}", e))?;
 
-        // Build the GenerationRouter and generate
-        let config = &self.config;
+        // Map aspect ratio to dimensions
+        let (width, height) = self.aspect_ratio_dims(&job.aspect_ratio);
 
-        // Build GenerationRequest from the job
-        let request = crate::providers::GenerationRequest {
+        // Build generation input using the router's registered providers
+        let input = crate::GenerationInput {
             prompt: job.enhanced_prompt.clone().unwrap_or_else(|| job.prompt.clone()),
             negative_prompt: None,
-            num_images: 1,
-            aspect_ratio: crate::providers::AspectRatio::Ratio1x1,
-            model: job.model.clone(),
-            format: crate::providers::ImageFormat::Png,
+            width,
+            height,
+            model: Some(job.model.clone()),
+            seed: None,
+            steps: None,
+            guidance_scale: None,
         };
 
-        // Route to the appropriate provider based on model prefix
-        let output = self.route_and_generate(&job.model, &request).await?;
+        let output = self.router.generate(input).await?;
 
         // Download the generated image bytes and upload to S3
         let s3_key = format!("generations/{}/{}.png", job.generation_id, 0);
@@ -185,7 +149,7 @@ impl GenerationWorker {
         .await?;
 
         let s3_url = storage
-            .upload_bytes(&s3_key, output.images[0].bytes.clone(), "image/png")
+            .upload_bytes(&s3_key, output.image_data, "image/png")
             .await?;
 
         // Update DB with output URL and status

@@ -1,26 +1,24 @@
 //! # OpenAI DALL-E Provider
 //!
 //! Implementation of the `ImageProvider` trait for OpenAI's DALL-E models.
+//! Also implements `GenerationService` to work with the GenerationRouter.
 
 use super::{download_image, AspectRatio, GenerationRequest, GenerationResponse, ImageFormat, ImageOutput, ImageProvider, ImageProviderError};
+use crate::{GenerationInput, GenerationOutput, GenerationProvider, GenerationService, GenerationMetadata, ImageFormat as CrateImageFormat};
 use async_trait::async_trait;
 use std::time::Instant;
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/images/generations";
+const BASE_URL: &str = "https://api.openai.com/v1/images/generations";
 
 /// OpenAI DALL-E image generation provider.
 #[derive(Clone)]
 pub struct OpenAIProvider {
     api_key: Option<String>,
-    base_url: String,
 }
 
 impl OpenAIProvider {
-    pub fn new(api_key: Option<String>, base_url: Option<String>) -> Self {
-        Self {
-            api_key,
-            base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
-        }
+    pub fn new(api_key: Option<String>) -> Self {
+        Self { api_key }
     }
 
     fn model_size(&self, model: &str, aspect_ratio: AspectRatio) -> Result<String, ImageProviderError> {
@@ -75,7 +73,7 @@ impl ImageProvider for OpenAIProvider {
         api_key: &str,
         request: &GenerationRequest,
     ) -> Result<GenerationResponse, ImageProviderError> {
-        if !self.is_available() && api_key.is_empty() {
+        if !ImageProvider::is_available(self) && api_key.is_empty() {
             return Err(ImageProviderError::NotAvailable("no API key provided".to_string()));
         }
 
@@ -115,7 +113,7 @@ impl ImageProvider for OpenAIProvider {
         };
 
         let response = client
-            .post(&self.base_url)
+            .post(BASE_URL)
             .header("Authorization", format!("Bearer {}", effective_key))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -180,5 +178,71 @@ impl ImageProvider for OpenAIProvider {
             credits_used: credits,
             inference_time_ms: start.elapsed().as_millis() as u64,
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl GenerationService for OpenAIProvider {
+    async fn generate(&self, input: GenerationInput) -> common::AppResult<GenerationOutput> {
+        let model = input.model.as_deref().unwrap_or("dall-e-3");
+        let aspect_ratio = aspect_ratio_from_dims(input.width, input.height);
+
+        let req = GenerationRequest {
+            prompt: input.prompt.clone(),
+            negative_prompt: input.negative_prompt.clone(),
+            num_images: 1,
+            aspect_ratio,
+            model: model.to_string(),
+            format: ImageFormat::Png,
+        };
+
+        let api_key = self.api_key.as_deref().unwrap_or("");
+        let resp = ImageProvider::generate(self, api_key, &req)
+            .await
+            .map_err(|e| common::AppError::Generation(e.to_string()))?;
+
+        let img = resp.images.into_iter().next().unwrap_or_else(|| ImageOutput {
+            bytes: Vec::new(),
+            original_url: None,
+            revised_prompt: None,
+            format: ImageFormat::Png,
+            width: input.width,
+            height: input.height,
+        });
+
+        Ok(GenerationOutput {
+            image_data: img.bytes,
+            image_format: CrateImageFormat::Png,
+            width: img.width,
+            height: img.height,
+            seed: input.seed.unwrap_or(0),
+            provider: GenerationProvider::Openai,
+            metadata: GenerationMetadata {
+                model_id: resp.model,
+                inference_time_ms: resp.inference_time_ms,
+                prompt_tokens: None,
+                extra: serde_json::json!({}),
+            },
+        })
+    }
+
+    fn provider(&self) -> GenerationProvider {
+        GenerationProvider::Openai
+    }
+
+    fn is_available(&self) -> bool {
+        self.api_key.as_ref().map_or(false, |k| !k.is_empty())
+    }
+}
+
+/// Convert width/height dimensions to an AspectRatio.
+fn aspect_ratio_from_dims(width: u32, height: u32) -> AspectRatio {
+    match (width, height) {
+        (1024, 1024) => AspectRatio::Ratio1x1,
+        (1792, 1024) | _ if width > height => AspectRatio::Ratio16x9,
+        (1024, 1792) | _ if height > width => AspectRatio::Ratio9x16,
+        (1024, 768) => AspectRatio::Ratio4x3,
+        (768, 1024) => AspectRatio::Ratio3x4,
+        _ => AspectRatio::Ratio1x1,
     }
 }

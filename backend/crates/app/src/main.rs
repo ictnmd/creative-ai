@@ -3,25 +3,21 @@
 //! The main HTTP API server built on Axum. Handles incoming HTTP requests,
 //! sets up CORS from CORS_ORIGINS env var, and routes to API handlers.
 
+use api::{ApiState, ApiStateInner};
 use axum::{
-    extract::State,
     http::{Method, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
 use common::AppConfig;
+use db;
 use serde::Serialize;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-
-/// Application state shared across all routes.
-#[derive(Clone)]
-pub struct AppState {
-    pub config: AppConfig,
-}
 
 /// Health check response.
 #[derive(Serialize)]
@@ -31,8 +27,8 @@ struct HealthResponse {
     environment: String,
 }
 
-/// Health endpoint handler.
-async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
+/// Health endpoint handler (served from the root router, outside api::create_router).
+async fn health_handler(state: Arc<ApiStateInner>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "healthy".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -83,17 +79,23 @@ fn init_tracing(config: &AppConfig) {
         .init();
 }
 
-/// Build the main application router.
-fn create_router(state: AppState) -> Router {
-    let cors = build_cors_layer(&state.config);
+/// Create the root router with health endpoints, mounted over the full API.
+fn create_root_router(state: ApiState, config: &AppConfig) -> Router {
+    let cors = build_cors_layer(config);
 
     Router::new()
         .route("/", get(root_handler))
-        .route("/health", get(health_handler))
-        .route("/api/v1/health", get(health_handler))
+        .route("/health", get({
+            let inner = state.inner.clone();
+            move || health_handler(inner)
+        }))
+        .route("/api/v1/health", get({
+            let inner = state.inner.clone();
+            move || health_handler(inner)
+        }))
+        .nest("/api/v1", api::create_router(state.clone()))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
 }
 
 /// Run the API server.
@@ -111,13 +113,28 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         config.cors_origins.len()
     );
 
-    // Build application state
-    let state = AppState {
-        config: config.clone(),
+    // Initialize PostgreSQL pool
+    info!("Connecting to PostgreSQL...");
+    let pool = db::init_pg_pool(&config.database_url).await?;
+    info!("PostgreSQL pool initialized");
+
+    // Initialize DragonflyDB / Redis
+    info!("Connecting to DragonflyDB...");
+    db::init_redis(&config.redis_url).await?;
+    let redis = db::redis_manager()?;
+    info!("DragonflyDB connection manager initialized");
+
+    // Create ApiState
+    let state = ApiState {
+        inner: Arc::new(ApiStateInner {
+            pool,
+            redis,
+            config: config.clone(),
+        }),
     };
 
     // Create the router
-    let app = create_router(state);
+    let app = create_root_router(state, &config);
 
     // Determine bind address
     let host = std::env::var("BACKEND_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());

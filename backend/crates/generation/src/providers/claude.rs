@@ -15,14 +15,14 @@ use async_trait::async_trait;
 pub struct ClaudeProvider;
 
 impl ClaudeProvider {
-    pub fn new(_base_url: Option<String>) -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
 
 impl Default for ClaudeProvider {
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }
 

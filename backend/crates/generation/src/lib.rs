@@ -8,7 +8,7 @@ pub mod providers;
 pub mod queue;
 pub mod worker;
 
-use common::AppResult;
+use common::{AppConfig, AppResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -79,32 +79,57 @@ pub trait GenerationService: Send + Sync {
 }
 
 /// Generation router that routes requests to the appropriate provider.
+#[derive(Clone)]
 pub struct GenerationRouter {
-    services: Vec<Arc<dyn providers::ImageProvider>>,
+    services: Vec<Arc<dyn GenerationService>>,
 }
 
 impl GenerationRouter {
-    /// Create a new generation router.
+    /// Create a new empty generation router.
     pub fn new() -> Self {
         Self { services: Vec::new() }
     }
 
+    /// Create a generation router with services registered from the app config.
+    /// Only providers with valid API keys are registered.
+    pub fn new_with_config(config: &AppConfig) -> Self {
+        use providers::{GeminiProvider, OpenAIProvider};
+        use std::sync::Arc;
+
+        let mut router = Self::new();
+
+        if let Some(ref key) = config.openai_api_key {
+            if !key.is_empty() {
+                router.add_service(Arc::new(OpenAIProvider::new(Some(key.clone()))));
+            }
+        }
+
+        if let Some(ref key) = config.gemini_api_key {
+            if !key.is_empty() {
+                router.add_service(Arc::new(GeminiProvider::new(Some(key.clone()))));
+            }
+        }
+
+        router
+    }
+
     /// Add a generation service.
-    pub fn add_service(&mut self, service: Arc<dyn providers::ImageProvider>) {
+    pub fn add_service(&mut self, service: Arc<dyn GenerationService>) {
         self.services.push(service);
     }
 
     /// Generate using the best available provider.
-    pub async fn generate(&self, model: &str, request: &providers::GenerationRequest) -> AppResult<providers::GenerationResponse> {
+    pub async fn generate(&self, input: GenerationInput) -> AppResult<GenerationOutput> {
+        let provider = input.model.as_deref().unwrap_or("openai");
+
         let service = self.services.iter().find(|s| {
-            let p = s.name().to_lowercase();
-            p.contains(&model.to_lowercase())
+            let p = format!("{:?}", s.provider()).to_lowercase();
+            p.contains(&provider.to_lowercase())
         }).ok_or_else(|| {
-            common::AppError::Generation(format!("No available generation provider for: {}", model))
+            common::AppError::Generation(format!("No available generation provider for: {}", provider))
         })?;
 
-        // Pass empty string - each provider has its own API key
-        service.generate("", request).await.map_err(common::AppError::from)
+        service.generate(input).await
     }
 }
 

@@ -53,11 +53,8 @@ pub struct AppConfig {
 
     // Worker-only
     pub openai_api_key: Option<String>,
-    pub openai_base_url: Option<String>,
     pub gemini_api_key: Option<String>,
-    pub gemini_base_url: Option<String>,
     pub anthropic_api_key: Option<String>,
-    pub anthropic_base_url: Option<String>,
 
     // Runtime
     pub log_level: String,
@@ -109,11 +106,8 @@ impl AppConfig {
         let github_client_secret = env::var("GITHUB_CLIENT_SECRET").ok();
 
         let openai_api_key = env::var("OPENAI_API_KEY").ok();
-        let openai_base_url = env::var("OPENAI_BASE_URL").ok();
         let gemini_api_key = env::var("GEMINI_API_KEY").ok();
-        let gemini_base_url = env::var("GEMINI_BASE_URL").ok();
         let anthropic_api_key = env::var("ANTHROPIC_API_KEY").ok();
-        let anthropic_base_url = env::var("ANTHROPIC_BASE_URL").ok();
 
         Self {
             database_url,
@@ -134,11 +128,8 @@ impl AppConfig {
             backend_url,
             cors_origins,
             openai_api_key,
-            openai_base_url,
             gemini_api_key,
-            gemini_base_url,
             anthropic_api_key,
-            anthropic_base_url,
             log_level,
             environment,
         }
