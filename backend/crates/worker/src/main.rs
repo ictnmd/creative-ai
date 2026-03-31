@@ -8,6 +8,9 @@
 //!   - Without `--worker` flag: runs as API server (for local development only)
 
 use common::AppConfig;
+use db::{init_pg_pool, init_redis};
+use generation::worker::GenerationWorker;
+use generation::queue::Queue;
 use std::env;
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -34,12 +37,41 @@ async fn run_worker(config: AppConfig) -> anyhow::Result<()> {
         config.anthropic_api_key.is_some()
     );
 
-    // Worker loop - process jobs from the queue
-    // TODO(Plan 03): Implement actual job processing with DragonflyDB queue
-    info!("Worker is ready and listening for jobs");
+    // 1. Initialize DragonflyDB connection
+    info!("Connecting to DragonflyDB at {}", config.redis_url);
+    init_redis(&config.redis_url).await?;
+    let redis_manager = db::redis_manager()?;
+    let redis_conn = redis_manager.read().clone();
+    let queue = Queue::new(redis_conn);
+    info!("DragonflyDB connection established");
 
-    // Keep the worker running until interrupted
+    // 2. Initialize PostgreSQL pool
+    info!("Connecting to PostgreSQL");
+    let pool = init_pg_pool(&config.database_url).await?;
+    info!("PostgreSQL pool established");
+
+    // 3. S3 storage config is already part of AppConfig (accessed by GenerationWorker)
+
+    // 4. Create the generation worker
+    let worker = GenerationWorker::new(queue, pool.clone(), config.clone());
+    info!("Generation worker created");
+
+    // 5. Spawn the worker
+    let worker_handle = tokio::spawn(async move {
+        worker.run().await;
+    });
+
+    // 6. Handle graceful shutdown with proper cleanup
     tokio::signal::ctrl_c().await?;
+    info!("Shutdown signal received, stopping worker...");
+
+    // Abort the worker's infinite loop
+    worker_handle.abort();
+    let _ = worker_handle.await;
+
+    // 7. Close connection pools
+    info!("Closing PostgreSQL pool...");
+    pool.close().await;
 
     info!("Worker shutting down gracefully");
     Ok(())

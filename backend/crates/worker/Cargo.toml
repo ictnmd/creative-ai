@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 common = { path = "../common" }
 models = { path = "../models" }
+db = { path = "../db" }
+generation = { path = "../generation" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
